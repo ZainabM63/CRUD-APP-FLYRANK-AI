@@ -1,13 +1,25 @@
-from typing import List
-from fastapi import FastAPI, HTTPException
-from fastapi import status
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, Field
 
 app=FastAPI(
     title="TASK API",
     description="This is a simple in-memory TODO CRUD API",
     version="1.0.0")
-    
-tasks_db=[{"id":1,"title":"Buy groceries","done":False},{"id":1,"title":"Read book","done":True},{"id":3,"title":"Write code","done":False}
+
+class TaskCreate(BaseModel):
+    title: str = Field(..., min_length=1)
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1)
+    done: Optional[bool] = None
+
+def get_next_id() -> int:
+    return max([t["id"] for t in tasks_db], default=0) + 1
+
+tasks_db=[{"id":1,"title":"Buy groceries","done":False},
+          {"id":1,"title":"Read book","done":True},
+          {"id":3,"title":"Write code","done":False}
           ]
 @app.get("/")
 def read_root():
@@ -32,3 +44,11 @@ def get_task(id: int):
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Task with id {id} not found"
     )
+
+@app.post("/tasks", status_code=status.HTTP_201_CREATED)
+def create_task(task_in: TaskCreate):
+    if not task_in.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    new_task = {"id": get_next_id(), "title": task_in.title.strip(), "done": False}
+    tasks_db.append(new_task)
+    return new_task
