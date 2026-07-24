@@ -4,8 +4,7 @@ A fast in-memory CRUD API built with FastAPI.
 
 ## How to Install & Run
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 pip install "fastapi[standard]" uvicorn
 fastapi dev main.py
 
@@ -22,3 +21,12 @@ DELETE,/tasks/{id},Delete task
 # Swagger UI
 
 Interactive docs available at http://localhost:8000/docs.
+
+#### HTTP/1.1 200 OK
+#### date: Sat, 25 Jul 2026 02:00:00 GMT
+#### server: uvicorn
+#### content-length: 151
+#### content-type: application/json
+
+```bash
+{"name":"Task API","version":"1.0","endpoints":["/tasks","/health","/docs"]}
