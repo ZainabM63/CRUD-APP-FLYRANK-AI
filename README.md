@@ -22,6 +22,8 @@ DELETE,/tasks/{id},Delete task
 
 Interactive docs available at http://localhost:8000/docs.
 
+# EXAMPLE
+
 #### HTTP/1.1 200 OK
 #### date: Sat, 25 Jul 2026 02:00:00 GMT
 #### server: uvicorn
