@@ -7,6 +7,7 @@ A fast in-memory CRUD API built with FastAPI.
 
 pip install "fastapi[standard]" uvicorn
 fastapi dev main.py
+```
 
 Method,Endpoint,Description
 GET,/,API Root Information
@@ -16,7 +17,7 @@ GET,/tasks/{id},Get single task
 POST,/tasks,Create task
 PUT,/tasks/{id},Update task
 DELETE,/tasks/{id},Delete task
- ```
+
 
 # Swagger UI
 
