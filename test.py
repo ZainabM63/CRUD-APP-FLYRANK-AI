@@ -3,7 +3,7 @@ import sqlite3
 conn = sqlite3.connect("tasks.db")
 cursor = conn.cursor()
 
-cursor.execute("SELECT * FROM tasks")
+cursor.execute("SELECT * FROM tasks WHERE done = 1")
 rows = cursor.fetchall()
 
 for row in rows:
