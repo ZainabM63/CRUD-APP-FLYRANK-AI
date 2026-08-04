@@ -1,47 +1,55 @@
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
+import os
+from dotenv import load_dotenv
+import psycopg
+from psycopg.rows import dict_row
 
-import sqlite3
-
-app=FastAPI(
+app = FastAPI(
     title="TASK API",
-    description="This is a simple in-memory TODO CRUD API",
-    version="1.0.0")
+    description="This is a PostgreSQL-backed TODO CRUD API",
+    version="1.0.0"
+)
 
-DB_FILE = "tasks.db"
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    """Helper function to open a connection to the SQLite database."""
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    # Use dict_row so we can access columns by name (e.g., row["id"])
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Create table if missing
+    # Create the tasks table if it is missing
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
-            done BOOLEAN NOT NULL
+            done BOOLEAN DEFAULT FALSE
         )
     """)
     
-    # 2. Check row count to seed only once
-    cursor.execute("SELECT COUNT(*) FROM tasks")
-    if cursor.fetchone()[0] == 0:
-        cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)", [
-            ("Buy groceries", 0),
-            ("Read book", 1),
-            ("Write code", 0)
-        ])
-        conn.commit()
+    # Seed 3 initial tasks only if the table is empty
+    cursor.execute("SELECT COUNT(*) FROM tasks;")
+    count = cursor.fetchone()['count']
+    if count == 0:
+        cursor.executemany(
+            "INSERT INTO tasks (title, done) VALUES (%s, %s)",
+            [
+                ("Learn FastAPI", False),
+                ("Set up Postgres", True),
+                ("Containerize with Docker", False)
+            ]
+        )
+    
+    conn.commit()
+    cursor.close()
     conn.close()
 
-# Run it immediately when the app starts up
+# Run this on app startup
 init_db()
 
 class TaskCreate(BaseModel):
@@ -51,22 +59,17 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1)
     done: Optional[bool] = None
 
-def get_next_id() -> int:
-    return max([t["id"] for t in tasks_db], default=0) + 1
-
-tasks_db=[{"id":1,"title":"Buy groceries","done":False},
-          {"id":1,"title":"Read book","done":True},
-          {"id":3,"title":"Write code","done":False}
-          ]
 @app.get("/")
 def read_root():
-    return {"name": " TASK API",
-            "version":"1.0.0",
-            "endpoints":["/tasks","/health","/docs"]}
+    return {
+        "name": "TASK API",
+        "version": "1.0.0",
+        "endpoints": ["/tasks", "/health", "/docs"]
+    }
 
 @app.get("/health")
 def health_check():
-    return{"status":"ok"}
+    return {"status": "ok"}
 
 @app.get("/tasks")
 def get_tasks():
@@ -75,17 +78,15 @@ def get_tasks():
     cursor.execute("SELECT id, title, done FROM tasks")
     rows = cursor.fetchall()
     conn.close()
-    
-    # Convert database rows into dictionaries and convert done (0/1) back to boolean (False/True)
-    return [{"id": row[0], "title": row[1], "done": bool(row[2])} for row in rows]
+    return rows
 
 @app.get("/tasks/{id}")
 def get_task(id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Parameterized query protects against SQL injection
-    cursor.execute("SELECT id, title, done FROM tasks WHERE id = ?", (id,))
+    # Postgres uses %s placeholders instead of ?
+    cursor.execute("SELECT id, title, done FROM tasks WHERE id = %s", (id,))
     row = cursor.fetchone()
     conn.close()
     
@@ -95,9 +96,8 @@ def get_task(id: int):
             detail=f"Task with id {id} not found"
         )
         
-    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+    return row
 
-# Stage 2: Create new tasks and store them in the database
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
 def create_task(task_in: TaskCreate):
     if not task_in.title.strip():
@@ -106,18 +106,16 @@ def create_task(task_in: TaskCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Insert new task into SQLite; set initial done status to 0 (False)
+    # Use RETURNING id to capture the auto-generated primary key in Postgres
     cursor.execute(
-        "INSERT INTO tasks (title, done) VALUES (?, ?)", 
-        (task_in.title.strip(), 0)
+        "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING id, title, done", 
+        (task_in.title.strip(), False)
     )
+    new_task = cursor.fetchone()
     conn.commit()
-    
-    # Grab the unique ID that the database just assigned to this new row
-    new_id = cursor.lastrowid
     conn.close()
     
-    return {"id": new_id, "title": task_in.title.strip(), "done": False}
+    return new_task
 
 @app.put("/tasks/{id}")
 def update_task(id: int, task_in: TaskUpdate):
@@ -125,7 +123,7 @@ def update_task(id: int, task_in: TaskUpdate):
     cursor = conn.cursor()
     
     # Check if task exists first
-    cursor.execute("SELECT id, title, done FROM tasks WHERE id = ?", (id,))
+    cursor.execute("SELECT id, title, done FROM tasks WHERE id = %s", (id,))
     row = cursor.fetchone()
     if not row:
         conn.close()
@@ -141,33 +139,33 @@ def update_task(id: int, task_in: TaskUpdate):
         current_title = task_in.title.strip()
         
     if task_in.done is not None:
-        current_done = 1 if task_in.done else 0
+        current_done = task_in.done
         
-    # Parameterized update statement
+    # Parameterized update statement using %s
     cursor.execute(
-        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        "UPDATE tasks SET title = %s, done = %s WHERE id = %s RETURNING id, title, done",
         (current_title, current_done, id)
     )
+    updated_task = cursor.fetchone()
     conn.commit()
     conn.close()
     
-    return {"id": id, "title": current_title, "done": bool(current_done)}
+    return updated_task
 
-# Stage 3: Delete a task using SQL
 @app.delete("/tasks/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
     
     # Check if task exists first
-    cursor.execute("SELECT id FROM tasks WHERE id = ?", (id,))
+    cursor.execute("SELECT id FROM tasks WHERE id = %s", (id,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail=f"Task {id} not found")
         
-    # Parameterized delete statement
-    cursor.execute("DELETE FROM tasks WHERE id = ?", (id,))
+    # Parameterized delete statement using %s
+    cursor.execute("DELETE FROM tasks WHERE id = %s", (id,))
     conn.commit()
     conn.close()
     
