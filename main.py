@@ -2,10 +2,41 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
+import sqlite3
+
 app=FastAPI(
     title="TASK API",
     description="This is a simple in-memory TODO CRUD API",
     version="1.0.0")
+
+DB_FILE = "tasks.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 1. Create table if missing
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            done BOOLEAN NOT NULL
+        )
+    """)
+    
+    # 2. Check row count to seed only once
+    cursor.execute("SELECT COUNT(*) FROM tasks")
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)", [
+            ("Buy groceries", 0),
+            ("Read book", 1),
+            ("Write code", 0)
+        ])
+        conn.commit()
+    conn.close()
+
+# Run it immediately when the app starts up
+init_db()
 
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1)
