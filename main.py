@@ -97,13 +97,27 @@ def get_task(id: int):
         
     return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
 
+# Stage 2: Create new tasks and store them in the database
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
 def create_task(task_in: TaskCreate):
     if not task_in.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
-    new_task = {"id": get_next_id(), "title": task_in.title.strip(), "done": False}
-    tasks_db.append(new_task)
-    return new_task
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Insert new task into SQLite; set initial done status to 0 (False)
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)", 
+        (task_in.title.strip(), 0)
+    )
+    conn.commit()
+    
+    # Grab the unique ID that the database just assigned to this new row
+    new_id = cursor.lastrowid
+    conn.close()
+    
+    return {"id": new_id, "title": task_in.title.strip(), "done": False}
 
 @app.put("/tasks/{id}")
 def update_task(id: int, task_in: TaskUpdate):
