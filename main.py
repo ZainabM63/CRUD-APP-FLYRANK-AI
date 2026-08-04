@@ -121,23 +121,54 @@ def create_task(task_in: TaskCreate):
 
 @app.put("/tasks/{id}")
 def update_task(id: int, task_in: TaskUpdate):
-    task = next((t for t in tasks_db if t["id"] == id), None)
-    if not task:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if task exists first
+    cursor.execute("SELECT id, title, done FROM tasks WHERE id = ?", (id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
         raise HTTPException(status_code=404, detail=f"Task {id} not found")
+    
+    current_title = row["title"]
+    current_done = row["done"]
     
     if task_in.title is not None:
         if not task_in.title.strip():
+            conn.close()
             raise HTTPException(status_code=400, detail="Title cannot be empty")
-        task["title"] = task_in.title.strip()
+        current_title = task_in.title.strip()
+        
     if task_in.done is not None:
-        task["done"] = task_in.done
-    return task
+        current_done = 1 if task_in.done else 0
+        
+    # Parameterized update statement
+    cursor.execute(
+        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        (current_title, current_done, id)
+    )
+    conn.commit()
+    conn.close()
+    
+    return {"id": id, "title": current_title, "done": bool(current_done)}
 
+# Stage 3: Delete a task using SQL
 @app.delete("/tasks/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(id: int):
-    global tasks_db
-    task = next((t for t in tasks_db if t["id"] == id), None)
-    if not task:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if task exists first
+    cursor.execute("SELECT id FROM tasks WHERE id = ?", (id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
         raise HTTPException(status_code=404, detail=f"Task {id} not found")
-    tasks_db = [t for t in tasks_db if t["id"] != id]
+        
+    # Parameterized delete statement
+    cursor.execute("DELETE FROM tasks WHERE id = ?", (id,))
+    conn.commit()
+    conn.close()
+    
     return None
