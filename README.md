@@ -15,8 +15,8 @@ A fast, fully containerized CRUD API built with FastAPI, PostgreSQL, and Docker 
 2. In your project root directory, run the following command to build and start the entire stack:
    ```bash
    docker compose up --build
+    ```
 
-```
 
 ## Endpoints
 
@@ -43,8 +43,6 @@ docker exec -it taskdb psql -U postgres -d tasks -c "SELECT * FROM tasks;"
 
 ```
 
-*[Insert Screenshot of your Swagger UI / Docker logs here]*
-
 # Example SQL Query Executed
 
 ```sql
@@ -68,9 +66,5 @@ SELECT * FROM tasks WHERE done = TRUE;
 
 ```json
 {"name":"TASK API","version":"1.0.0","endpoints":["/tasks","/health","/docs"]}
-
-```
-
-```
 
 ```
