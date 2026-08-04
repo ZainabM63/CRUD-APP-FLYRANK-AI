@@ -11,6 +11,12 @@ app=FastAPI(
 
 DB_FILE = "tasks.db"
 
+def get_db_connection():
+    """Helper function to open a connection to the SQLite database."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -64,17 +70,32 @@ def health_check():
 
 @app.get("/tasks")
 def get_tasks():
-    return tasks_db
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, done FROM tasks")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Convert database rows into dictionaries and convert done (0/1) back to boolean (False/True)
+    return [{"id": row[0], "title": row[1], "done": bool(row[2])} for row in rows]
 
 @app.get("/tasks/{id}")
 def get_task(id: int):
-    for task in tasks_db:
-        if task["id"] == id:
-            return task
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Task with id {id} not found"
-    )
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Parameterized query protects against SQL injection
+    cursor.execute("SELECT id, title, done FROM tasks WHERE id = ?", (id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task with id {id} not found"
+        )
+        
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
 
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
 def create_task(task_in: TaskCreate):
